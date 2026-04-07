@@ -18,9 +18,9 @@ These scripts help inspect that state and sync a known-good profile across a set
 
 ## Included scripts
 
-### `check-2632-codex-auth.sh`
+### `check-openclaw-codex-auth.sh`
 
-Checks Codex auth health for a group of OpenClaw Docker gateways.
+Checks Codex auth health for a chosen set of OpenClaw Docker gateways.
 
 What it does:
 - inspects stored `auth-profiles.json` metadata
@@ -28,16 +28,16 @@ What it does:
 - optionally runs a live OpenClaw probe
 - classifies targets as `healthy`, `expired`, `broken`, `drift`, or `missing`
 
-Example:
+Examples:
 
 ```bash
-./check-2632-codex-auth.sh --ids "7 8 9 10 11"
-./check-2632-codex-auth.sh --ids "7 8 9 10 11" --json
+./check-openclaw-codex-auth.sh --ids "1 2 3 4 5 6"
+./check-openclaw-codex-auth.sh --ids "7 8 9 10 11" --json
 ```
 
-### `fix-codex-auth-v4.sh`
+### `sync-openclaw-codex-auth.sh`
 
-Repairs/syncs Codex OAuth across a group of OpenClaw Docker gateways.
+Repairs/syncs Codex OAuth across a chosen set of OpenClaw Docker gateways.
 
 What it does:
 - reads a source profile from one container's `auth-profiles.json`
@@ -47,16 +47,11 @@ What it does:
 - restarts containers with a staggered delay
 - verifies the results afterward
 
-Example:
+Examples:
 
 ```bash
-./fix-codex-auth-v4.sh --ids "7 8 9 10 11" --source-id 7
-```
-
-Dry run:
-
-```bash
-./fix-codex-auth-v4.sh --ids "7 8 9 10 11" --source-id 7 --dry-run
+./sync-openclaw-codex-auth.sh --ids "1 2 3 4 5 6" --source-id 1
+./sync-openclaw-codex-auth.sh --ids "7 8 9 10 11" --dry-run
 ```
 
 ## Requirements
@@ -66,11 +61,12 @@ Dry run:
 - OpenClaw installed in the containers
 - container naming that matches `openclaw-openclaw-gateway-<id>-1`
 
-## Important note
+## Important notes
 
-These scripts sync OpenClaw's cached auth profiles.
-They do not renew your host Codex login for you.
-If your host `~/.codex/auth.json` is stale, re-authenticate first.
+- `--ids` is required. This avoids accidental patches to the wrong container set.
+- These scripts sync OpenClaw's cached auth profiles.
+- They do not renew your host Codex login for you.
+- If your host `~/.codex/auth.json` is stale, re-authenticate first.
 
 ## Safety
 

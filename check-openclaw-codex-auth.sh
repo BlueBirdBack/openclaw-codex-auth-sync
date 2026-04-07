@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IDS=(7 8 9 10 11)
+IDS=()
 PROBE=1
 JSON_MODE=0
 PROBE_TIMEOUT_MS=5000
 
 usage() {
   cat <<'EOF'
-Usage: check-2632-codex-auth.sh [options]
+Usage: check-openclaw-codex-auth.sh [options]
 
-Inspect Codex auth health for 2632 Docker gateways (oc7-oc11 by default).
+Inspect Codex auth health for OpenClaw Docker gateways.
 
 This script checks two layers:
 1. Stored auth metadata in auth-profiles.json
 2. Live OpenClaw probe for the active default profile (and a fallback named profile when needed)
 
 Options:
-  --ids "7 8 9 10 11"    Space-separated container ids to inspect
+  --ids "1 2 3 4 5 6"    Space-separated container ids to inspect (required)
   --no-probe             Skip live OpenClaw probes; only inspect stored auth metadata
   --probe-timeout-ms N   Per-probe timeout passed to OpenClaw (default: 5000)
   --json                 Output JSON instead of a text table
@@ -68,6 +68,11 @@ command -v python3 >/dev/null 2>&1 || { echo "python3 not found in PATH" >&2; ex
 export IDS_STR="${IDS[*]}"
 export PROBE JSON_MODE PROBE_TIMEOUT_MS
 
+if [[ ${#IDS[@]} -eq 0 ]]; then
+  echo "You must pass --ids, for example: --ids "1 2 3 4 5 6"" >&2
+  exit 2
+fi
+
 python3 - <<'PY'
 import json
 import os
@@ -76,7 +81,7 @@ import sys
 import time
 from typing import Any
 
-IDS = [x for x in os.environ.get("IDS_STR", "7 8 9 10 11").split() if x]
+IDS = [x for x in os.environ.get("IDS_STR", "").split() if x]
 PROBE = os.environ.get("PROBE", "1") == "1"
 JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
 PROBE_TIMEOUT_MS = int(os.environ.get("PROBE_TIMEOUT_MS", "5000"))
@@ -300,7 +305,6 @@ for raw_id in IDS:
 
 if JSON_MODE:
     print(json.dumps({
-        "host": "2632",
         "checkedAt": int(time.time() * 1000),
         "probeEnabled": PROBE,
         "probeTimeoutMs": PROBE_TIMEOUT_MS,

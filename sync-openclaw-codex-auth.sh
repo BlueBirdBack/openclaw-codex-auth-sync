@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-CHECKER_SCRIPT="$SCRIPT_DIR/check-2632-codex-auth.sh"
+CHECKER_SCRIPT="$SCRIPT_DIR/check-openclaw-codex-auth.sh"
 AUTH_PATH="/home/node/.openclaw/agents/main/agent/auth-profiles.json"
-IDS=(7 8 9 10 11)
-SOURCE_ID=7
+IDS=()
+SOURCE_ID=""
 SOURCE_PROFILE=""
 DRY_RUN=0
 NO_RESTART=0
@@ -14,14 +14,14 @@ ALLOW_EXPIRED_SOURCE=0
 FORCE=0
 RESTART_DELAY=8
 PROBE_TIMEOUT_MS=5000
-WORKDIR="/tmp/fix-codex-auth-v4-$(date +%Y%m%d-%H%M%S)"
+WORKDIR="/tmp/sync-openclaw-codex-auth-$(date +%Y%m%d-%H%M%S)"
 IDS_JOINED=""
 
 usage() {
   cat <<'EOF'
-Usage: fix-codex-auth-v4.sh [options]
+Usage: sync-openclaw-codex-auth.sh [options]
 
-Repair/sync Codex OAuth across 2632 Docker gateways (oc7-oc11 by default).
+Repair/sync Codex OAuth across OpenClaw Docker gateways.
 
 What v4 does:
 - reads source auth from auth-profiles.json (not ~/.codex/auth.json)
@@ -32,8 +32,8 @@ What v4 does:
 - verifies stored metadata and attempts a best-effort live probe
 
 Options:
-  --ids "7 8 9 10 11"       Space-separated target ids (default: all)
-  --source-id N             Source container id (default: 7)
+  --ids "1 2 3 4 5 6"       Space-separated target ids to patch (required)
+  --source-id N             Source container id (default: first id in --ids)
   --source-profile ID       Explicit source profile id (example: openai-codex:realpromptguru@gmail.com)
   --allow-expired-source    Allow selecting/propagating an expired source profile (not recommended)
   --force                   Bypass source live-probe gate and final healthy check
@@ -109,6 +109,11 @@ SRC_FILE="$WORKDIR/source-auth.json"
 IDS_JOINED="${IDS[*]}"
 export IDS_JOINED ALLOW_EXPIRED_SOURCE FORCE PROBE_TIMEOUT_MS
 
+if [[ ${#IDS[@]} -eq 0 ]]; then
+  echo "You must pass --ids, for example: --ids "1 2 3 4 5 6"" >&2
+  exit 2
+fi
+
 require_container() {
   local c="$1"
   docker inspect "$c" >/dev/null 2>&1 || { echo "Container not found: $c" >&2; exit 2; }
@@ -119,7 +124,7 @@ require_auth_file() {
   docker exec "$c" test -f "$AUTH_PATH" || { echo "Auth file missing in $c: $AUTH_PATH" >&2; exit 2; }
 }
 
-echo "=== fix-codex-auth-v4 ==="
+echo "=== sync-openclaw-codex-auth ==="
 echo "workdir: $WORKDIR"
 echo "source container: $SRC_CONTAINER"
 echo "targets: ${IDS[*]}"
