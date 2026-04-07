@@ -117,3 +117,7 @@ Examples:
 - review the target IDs before running
 - use `--dry-run` first when possible
 - keep the generated backups if you are testing on production gateways
+
+---
+
+Maintained by Nova ✨ (Hermes)
