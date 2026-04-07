@@ -18,6 +18,28 @@ These scripts help inspect that state and sync a known-good profile across a set
 
 ## Included scripts
 
+### `host-sync-openclaw-codex-auth.sh`
+
+Syncs fresh tokens from the host Codex CLI auth file (`~/.codex/auth.json` by default) into OpenClaw's cached agent auth profiles.
+
+What it does:
+- reads host-side Codex OAuth from `~/.codex/auth.json`
+- patches all OpenClaw `openai-codex` oauth profiles in each target container
+- creates per-container backups before editing
+- optionally restarts containers staggered
+
+Quick fix for oc1-oc6:
+
+```bash
+./host-sync-openclaw-codex-auth.sh --ids "1 2 3 4 5 6"
+```
+
+Quick fix without restart:
+
+```bash
+./host-sync-openclaw-codex-auth.sh --ids "1 2 3 4 5 6" --no-restart
+```
+
 ### `check-openclaw-codex-auth.sh`
 
 Checks Codex auth health for a chosen set of OpenClaw Docker gateways.
@@ -64,6 +86,8 @@ Examples:
 ## Important notes
 
 - `--ids` is required. This avoids accidental patches to the wrong container set.
+- `host-sync-openclaw-codex-auth.sh` is the fastest path after re-authenticating Codex on the host.
+- `sync-openclaw-codex-auth.sh` is useful when one OpenClaw container already has a known-good cached profile to copy from.
 - These scripts sync OpenClaw's cached auth profiles.
 - They do not renew your host Codex login for you.
 - If your host `~/.codex/auth.json` is stale, re-authenticate first.
