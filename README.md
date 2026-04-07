@@ -40,6 +40,24 @@ Quick fix without restart:
 ./host-sync-openclaw-codex-auth.sh --ids "1 2 3 4 5 6" --no-restart
 ```
 
+### `check-openclaw-codex-expiry.sh`
+
+Checks cached Codex token expiry across selected OpenClaw containers.
+
+What it does:
+- inspects `openai-codex:default` expiry in each target container
+- flags `healthy`, `expiring_soon`, `expired`, `no_token`, or `down`
+- supports `--threshold-hours`
+- supports `--json`
+- can optionally alert via Telegram with explicit `--telegram-token` and `--chat-id`
+
+Examples:
+
+```bash
+./check-openclaw-codex-expiry.sh --ids "1 2 3 4 5 6"
+./check-openclaw-codex-expiry.sh --ids "1 2 3 4 5 6" --threshold-hours 24 --json
+```
+
 ### `check-openclaw-codex-auth.sh`
 
 Checks Codex auth health for a chosen set of OpenClaw Docker gateways.
@@ -87,7 +105,9 @@ Examples:
 
 - `--ids` is required. This avoids accidental patches to the wrong container set.
 - `host-sync-openclaw-codex-auth.sh` is the fastest path after re-authenticating Codex on the host.
+- `host-sync-openclaw-codex-auth.sh` now supports `--dry-run` and `--json` for previewing changes before patching.
 - `sync-openclaw-codex-auth.sh` is useful when one OpenClaw container already has a known-good cached profile to copy from.
+- `check-openclaw-codex-expiry.sh` is the generic early-warning monitor for stale cached tokens.
 - These scripts sync OpenClaw's cached auth profiles.
 - They do not renew your host Codex login for you.
 - If your host `~/.codex/auth.json` is stale, re-authenticate first.

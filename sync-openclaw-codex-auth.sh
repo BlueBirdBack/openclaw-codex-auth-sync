@@ -103,16 +103,20 @@ done
 command -v docker >/dev/null 2>&1 || { echo "docker not found in PATH" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 not found in PATH" >&2; exit 2; }
 
+if [[ ${#IDS[@]} -eq 0 ]]; then
+  echo 'You must pass --ids, for example: --ids "1 2 3 4 5 6"' >&2
+  exit 2
+fi
+
+if [[ -z "$SOURCE_ID" ]]; then
+  SOURCE_ID="${IDS[0]}"
+fi
+
 mkdir -p "$WORKDIR/backups" "$WORKDIR/patched"
 SRC_CONTAINER="openclaw-openclaw-gateway-${SOURCE_ID}-1"
 SRC_FILE="$WORKDIR/source-auth.json"
 IDS_JOINED="${IDS[*]}"
 export IDS_JOINED ALLOW_EXPIRED_SOURCE FORCE PROBE_TIMEOUT_MS
-
-if [[ ${#IDS[@]} -eq 0 ]]; then
-  echo "You must pass --ids, for example: --ids "1 2 3 4 5 6"" >&2
-  exit 2
-fi
 
 require_container() {
   local c="$1"
