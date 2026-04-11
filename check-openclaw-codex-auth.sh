@@ -20,7 +20,7 @@ Options:
   --ids "1 2 3 4 5 6"    Space-separated container ids to inspect (required)
   --no-probe             Skip live OpenClaw probes; only inspect stored auth metadata
   --probe-timeout-ms N   Per-probe timeout passed to OpenClaw (default: 5000)
-  --json                 Output JSON instead of a text table
+  --json                 Output JSON instead of a text table (printed after the full run completes)
   -h, --help             Show this help
 
 Verdicts:
@@ -64,6 +64,11 @@ done
 
 command -v docker >/dev/null 2>&1 || { echo "docker not found in PATH" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 not found in PATH" >&2; exit 2; }
+docker ps >/dev/null 2>&1 || {
+  echo "docker is installed but not accessible from this shell (daemon unreachable or /var/run/docker.sock permission denied)." >&2
+  echo "If you were just added to the docker group, start a fresh login shell or run: newgrp docker" >&2
+  exit 2
+}
 
 export IDS_STR="${IDS[*]}"
 export PROBE JSON_MODE PROBE_TIMEOUT_MS
