@@ -330,12 +330,13 @@ for id in "${IDS[@]}"; do
 
   echo "-- oc${id}"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    TARGET_JSON=$(docker exec "$c" python3 -c "import json; print(json.dumps(json.load(open('$AUTH_PATH'))))")
-    export TARGET_JSON
-    python3 - "$SRC_FILE" <<'PY'
+    target_tmp="$WORKDIR/patched/target-auth-profiles-oc${id}.json"
+    docker exec "$c" python3 -c "import json; print(json.dumps(json.load(open('$AUTH_PATH'))))" >"$target_tmp"
+    chmod 600 "$target_tmp"
+    python3 - "$SRC_FILE" "$target_tmp" <<'PY'
 import json, os, sys, time
 src_doc = json.load(open(sys.argv[1]))
-dst_doc = json.loads(os.environ['TARGET_JSON'])
+dst_doc = json.load(open(sys.argv[2]))
 selected = json.loads(os.environ['SELECTED_JSON'])
 profile_id = selected['selectedProfileId']
 src_profiles = src_doc.get('profiles', {}) or {}
@@ -368,7 +369,6 @@ would_change = (
 )
 print(f"   would patch default: email={payload.get('email')} hours_left={left} refresh={'yes' if payload.get('refresh') else 'no'} change={'yes' if would_change else 'no'}")
 PY
-    unset TARGET_JSON
   else
     docker cp "$c:$AUTH_PATH" "$backup"
     chmod 600 "$backup"
