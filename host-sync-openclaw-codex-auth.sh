@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 IDS=()
 RESTART=1
@@ -69,9 +70,19 @@ command -v python3 >/dev/null 2>&1 || { echo "python3 not found in PATH" >&2; ex
 [[ ${#IDS[@]} -gt 0 ]] || { echo 'You must pass --ids, for example: --ids "1 2 3 4 5 6"' >&2; exit 2; }
 [[ -f "$CODEX_AUTH_PATH" ]] || { echo "Host auth file not found: $CODEX_AUTH_PATH" >&2; exit 2; }
 
-WORKDIR="/tmp/host-sync-openclaw-codex-auth-$(date +%Y%m%d-%H%M%S)"
+WORKDIR="$(mktemp -d /tmp/host-sync-openclaw-codex-auth.XXXXXX)"
+KEEP_WORKDIR="${KEEP_WORKDIR:-0}"
+cleanup() {
+  if [[ "${KEEP_WORKDIR}" == "1" ]]; then
+    echo "Keeping workdir: $WORKDIR"
+    return
+  fi
+  rm -rf "$WORKDIR"
+}
+trap cleanup EXIT
 mkdir -p "$WORKDIR/backups"
 cp "$CODEX_AUTH_PATH" "$WORKDIR/codex-auth.json"
+chmod 600 "$WORKDIR/codex-auth.json"
 
 export TMP_CODEX_AUTH="$WORKDIR/codex-auth.json"
 export AUTH_PATH IDS_STR="${IDS[*]}" DRY_RUN JSON_MODE BACKUP_DIR="$WORKDIR/backups"
@@ -97,7 +108,6 @@ payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode()).decode())
 host_expires = int(payload['exp']) * 1000
 profile = payload.get('https://api.openai.com/profile') or {}
 host_email = profile.get('email') or payload.get('email')
-host_refresh_prefix = refresh[:16] + '...'
 now_ms = int(time.time() * 1000)
 
 results = []
@@ -128,7 +138,6 @@ for cid in ids:
     default = profiles.get('openai-codex:default') or {}
     current_expires = int(default.get('expires') or 0)
     current_refresh = default.get('refresh') or ''
-    current_prefix = (current_refresh[:16] + '...') if current_refresh else ''
     current_email = default.get('email')
     if not current_email:
         for key, prof in profiles.items():
@@ -149,8 +158,8 @@ for cid in ids:
         'host_expires': host_expires,
         'current_hours_left': int((current_expires - now_ms) / 3600000) if current_expires > now_ms else -1,
         'host_hours_left': int((host_expires - now_ms) / 3600000),
-        'current_refresh_prefix': current_prefix,
-        'host_refresh_prefix': host_refresh_prefix,
+        'current_refresh_present': bool(current_refresh),
+        'host_refresh_present': bool(refresh),
         'current_email': current_email,
         'host_email': host_email,
         'changed_profiles': changed_profiles,
@@ -165,6 +174,7 @@ for cid in ids:
             row['error'] = (cp.stderr or cp.stdout).strip()
             results.append(row)
             continue
+        backup_path.chmod(0o600)
         patch_code = f'''import base64, json, os\nfrom pathlib import Path\nhost_auth=json.load(open({json.dumps(os.environ['TMP_CODEX_AUTH'])}))\ntokens=host_auth["tokens"]\naccess=tokens["access_token"]\nrefresh=tokens["refresh_token"]\naccount_id=tokens.get("account_id")\npayload_b64=access.split(".")[1]\npayload_b64 += "=" * (-len(payload_b64) % 4)\npayload=json.loads(base64.urlsafe_b64decode(payload_b64.encode()).decode())\nexpires_ms=int(payload["exp"])*1000\nprofile=payload.get("https://api.openai.com/profile") or {{}}\nemail=profile.get("email") or payload.get("email")\npath=Path({json.dumps(auth_path)})\ndata=json.load(path.open())\nprofiles=data.get("profiles", {{}})\nchanged=[]\nfor key, prof in profiles.items():\n    if isinstance(prof, dict) and prof.get("provider") == "openai-codex" and prof.get("type") == "oauth":\n        prof["access"]=access\n        prof["refresh"]=refresh\n        prof["expires"]=expires_ms\n        if account_id:\n            prof["accountId"]=account_id\n        if email and key != "openai-codex:default":\n            prof["email"]=email\n        changed.append(key)\nif "openai-codex:default" not in profiles:\n    profiles["openai-codex:default"]={{"type":"oauth","provider":"openai-codex","access":access,"refresh":refresh,"expires":expires_ms}}\n    if account_id:\n        profiles["openai-codex:default"]["accountId"]=account_id\n    changed.append("openai-codex:default")\nif "lastGood" in data and isinstance(data["lastGood"], dict):\n    if email and f"openai-codex:{{email}}" in profiles:\n        data["lastGood"]["openai-codex"] = f"openai-codex:{{email}}"\n    else:\n        data["lastGood"]["openai-codex"] = "openai-codex:default"\nwith path.open("w") as f:\n    json.dump(data, f, indent=2)\n    f.write("\\n")\nprint(json.dumps({{"changed": changed, "expires": expires_ms, "email": email, "accountId": account_id}}))'''
         write = subprocess.run(['docker', 'exec', container, 'python3', '-c', patch_code], text=True, capture_output=True)
         if write.returncode != 0:
@@ -187,7 +197,7 @@ else:
             continue
         action = 'would update' if dry_run else 'updated'
         changed = ', '.join(row.get('changed_profiles', []))
-        print(f"- oc{row['id']}: {action}; hours {row['current_hours_left']} -> {row['host_hours_left']}; refresh {row['current_refresh_prefix']} -> {row['host_refresh_prefix']}; profiles [{changed}]")
+        print(f"- oc{row['id']}: {action}; hours {row['current_hours_left']} -> {row['host_hours_left']}; refresh_present {row['current_refresh_present']} -> {row['host_refresh_present']}; profiles [{changed}]")
 PY
 
 if [[ "$DRY_RUN" -eq 0 && "$RESTART" -eq 1 ]]; then
@@ -207,3 +217,4 @@ fi
 echo
 
 echo "Backups: $WORKDIR/backups"
+echo "Set KEEP_WORKDIR=1 to preserve temporary files after exit."
