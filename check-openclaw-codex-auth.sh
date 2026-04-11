@@ -69,7 +69,7 @@ export IDS_STR="${IDS[*]}"
 export PROBE JSON_MODE PROBE_TIMEOUT_MS
 
 if [[ ${#IDS[@]} -eq 0 ]]; then
-  echo "You must pass --ids, for example: --ids "1 2 3 4 5 6"" >&2
+  echo 'You must pass --ids, for example: --ids "1 2 3 4 5 6"' >&2
   exit 2
 fi
 
