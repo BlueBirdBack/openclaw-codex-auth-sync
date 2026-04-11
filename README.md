@@ -16,7 +16,51 @@ That can leave agents broken with errors like:
 
 These scripts help inspect that state and sync a known-good profile across a set of OpenClaw containers.
 
+## Quick decision guide
+
+Use the right script for the layer you care about:
+
+- **Host Codex login only** (`~/.codex/auth.json`) → `check-host-codex-auth.sh`
+- **Container cached token expiry only** → `check-openclaw-codex-expiry.sh`
+- **Container cached auth + live probe** → `check-openclaw-codex-auth.sh`
+- **Copy host auth into containers** → `host-sync-openclaw-codex-auth.sh`
+- **Copy one container's cached auth into other containers** → `sync-openclaw-codex-auth.sh`
+
+Examples:
+
+```bash
+# Host auth only
+./check-host-codex-auth.sh --json
+
+# Container expiry only (fast)
+./check-openclaw-codex-expiry.sh --ids "7 8 9 10 11" --json
+
+# Container metadata + live probe (slower)
+./check-openclaw-codex-auth.sh --ids "7 8 9 10 11" --json
+
+# Fast metadata-only auth check, no live probe
+./check-openclaw-codex-auth.sh --ids "7 8 9 10 11" --json --no-probe
+```
+
 ## Included scripts
+
+### `check-host-codex-auth.sh`
+
+Checks the **host** Codex CLI auth file directly.
+
+What it does:
+- reads `~/.codex/auth.json` (or `--auth-path`)
+- decodes the access token expiry
+- reports host email/account id when available
+- shows hours left and whether a refresh token is present
+
+Examples:
+
+```bash
+./check-host-codex-auth.sh
+./check-host-codex-auth.sh --json
+./check-host-codex-auth.sh --auth-path /custom/path/auth.json --json
+```
 
 ### `host-sync-openclaw-codex-auth.sh`
 
@@ -73,6 +117,7 @@ Examples:
 ```bash
 ./check-openclaw-codex-auth.sh --ids "1 2 3 4 5 6"
 ./check-openclaw-codex-auth.sh --ids "7 8 9 10 11" --json
+./check-openclaw-codex-auth.sh --ids "7 8 9 10 11" --json --no-probe
 ```
 
 ### `sync-openclaw-codex-auth.sh`
@@ -96,6 +141,12 @@ Examples:
 
 ## Requirements
 
+### Host-only script
+
+- Python 3
+
+### Docker/container scripts
+
 - Docker
 - Python 3
 - OpenClaw installed in the containers
@@ -103,14 +154,28 @@ Examples:
 
 ## Important notes
 
-- `--ids` is required. This avoids accidental patches to the wrong container set.
+- `--ids` is required for the Docker/container scripts. This avoids accidental patches to the wrong container set.
 - `host-sync-openclaw-codex-auth.sh` is the fastest path after re-authenticating Codex on the host.
-- `host-sync-openclaw-codex-auth.sh` now supports `--dry-run` and `--json` for previewing changes before patching.
+- `host-sync-openclaw-codex-auth.sh` supports `--dry-run` and `--json` for previewing changes before patching.
 - `sync-openclaw-codex-auth.sh` is useful when one OpenClaw container already has a known-good cached profile to copy from.
 - `check-openclaw-codex-expiry.sh` is the generic early-warning monitor for stale cached tokens.
+- `check-openclaw-codex-auth.sh` does a **live probe** by default. That is slower than metadata-only checks and `--json` prints after the full run completes.
+- If you want a fast answer from `check-openclaw-codex-auth.sh`, use `--no-probe`.
 - These scripts sync OpenClaw's cached auth profiles.
 - They do not renew your host Codex login for you.
 - If your host `~/.codex/auth.json` is stale, re-authenticate first.
+
+## Docker access note
+
+The Docker/container scripts fail fast if Docker is installed but not reachable from the current shell.
+
+Typical fix when you just added the user to the `docker` group:
+
+```bash
+newgrp docker
+```
+
+Or start a fresh login shell.
 
 ## Safety
 

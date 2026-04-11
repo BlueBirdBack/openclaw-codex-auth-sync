@@ -113,6 +113,11 @@ done
 
 command -v docker >/dev/null 2>&1 || { echo "docker not found in PATH" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 not found in PATH" >&2; exit 2; }
+docker ps >/dev/null 2>&1 || {
+  echo "docker is installed but not accessible from this shell (daemon unreachable or /var/run/docker.sock permission denied)." >&2
+  echo "If you were just added to the docker group, start a fresh login shell or run: newgrp docker" >&2
+  exit 2
+}
 
 if [[ ${#IDS[@]} -eq 0 ]]; then
   echo 'You must pass --ids, for example: --ids "1 2 3 4 5 6"' >&2
