@@ -144,7 +144,6 @@ def get_profile_meta(doc: dict[str, Any]) -> dict[str, Any]:
         "status": "valid" if exp and exp > now_ms else "expired",
         "accountId": account_id,
         "email": email,
-        "refreshPrefix": (refresh[:16] + "...") if refresh else "",
         "namedProfiles": named,
         "freshestNamedProfile": freshest_named,
     }
@@ -259,7 +258,6 @@ for raw_id in IDS:
         "refreshPresent": meta["hasRefresh"],
         "accountId": meta["accountId"],
         "email": meta["email"],
-        "refreshPrefix": meta["refreshPrefix"],
         "namedProfiles": meta["namedProfiles"],
         "freshestNamedProfile": meta["freshestNamedProfile"],
     })

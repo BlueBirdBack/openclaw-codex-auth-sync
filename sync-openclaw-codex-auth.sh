@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CHECKER_SCRIPT="$SCRIPT_DIR/check-openclaw-codex-auth.sh"
@@ -14,8 +15,18 @@ ALLOW_EXPIRED_SOURCE=0
 FORCE=0
 RESTART_DELAY=8
 PROBE_TIMEOUT_MS=5000
-WORKDIR="/tmp/sync-openclaw-codex-auth-$(date +%Y%m%d-%H%M%S)"
+WORKDIR="$(mktemp -d /tmp/sync-openclaw-codex-auth.XXXXXX)"
 IDS_JOINED=""
+KEEP_WORKDIR="${KEEP_WORKDIR:-0}"
+
+cleanup() {
+  if [[ "${KEEP_WORKDIR}" == "1" ]]; then
+    echo "Keeping workdir: $WORKDIR"
+    return
+  fi
+  rm -rf "$WORKDIR"
+}
+trap cleanup EXIT
 
 usage() {
   cat <<'EOF'
@@ -142,6 +153,7 @@ for id in "${IDS[@]}"; do
 done
 
 docker cp "$SRC_CONTAINER:$AUTH_PATH" "$SRC_FILE"
+chmod 600 "$SRC_FILE"
 
 SELECTED_JSON=$(python3 - "$SRC_FILE" "$SOURCE_PROFILE" <<'PY'
 import json, os, sys, time
@@ -167,7 +179,6 @@ for key, value in profiles.items():
         'hasRefresh': bool(refresh),
         'email': value.get('email'),
         'accountId': value.get('accountId'),
-        'refreshPrefix': (str(refresh)[:16] + '...') if refresh else '',
         'profile': value,
     })
 
@@ -205,7 +216,6 @@ print(json.dumps({
     'hasRefresh': selected['hasRefresh'],
     'email': selected['email'],
     'accountId': selected['accountId'],
-    'refreshPrefix': selected['refreshPrefix'],
 }, separators=(',', ':')))
 PY
 )
@@ -214,7 +224,7 @@ export SELECTED_JSON
 SELECTED_SUMMARY=$(python3 - <<'PY'
 import json, os
 s = json.loads(os.environ['SELECTED_JSON'])
-print(f"source profile: {s['selectedProfileId']} | valid={s['valid']} | email={s.get('email')} | refresh={s.get('refreshPrefix')}")
+print(f"source profile: {s['selectedProfileId']} | valid={s['valid']} | email={s.get('email')} | refresh_present={'yes' if s.get('hasRefresh') else 'no'}")
 PY
 )
 echo "$SELECTED_SUMMARY"
@@ -319,9 +329,48 @@ for id in "${IDS[@]}"; do
   patched="$WORKDIR/patched/auth-profiles-oc${id}.json"
 
   echo "-- oc${id}"
-  docker cp "$c:$AUTH_PATH" "$backup"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    docker exec "$c" python3 - "$SRC_FILE" "$AUTH_PATH" <<'PY'
+import json, sys, time
+src_doc = json.load(open(sys.argv[1]))
+auth_path = sys.argv[2]
+dst_doc = json.load(open(auth_path))
+selected = json.loads(os.environ['SELECTED_JSON'])
+profile_id = selected['selectedProfileId']
+src_profiles = src_doc.get('profiles', {}) or {}
+src = src_profiles[profile_id]
 
-  python3 - "$SRC_FILE" "$backup" "$patched" <<'PY'
+dst_profiles = dst_doc.setdefault('profiles', {})
+payload = {
+    'type': 'oauth',
+    'provider': 'openai-codex',
+    'access': src['access'],
+    'refresh': src['refresh'],
+    'expires': src['expires'],
+    'accountId': src.get('accountId'),
+}
+if src.get('email'):
+    payload['email'] = src.get('email')
+
+current = dst_profiles.get('openai-codex:default', {}) or {}
+exp = int(payload.get('expires') or 0)
+now = int(time.time() * 1000)
+left = int((exp - now) / 3600000) if exp > now else -1
+would_change = (
+    current.get('access') != payload['access']
+    or current.get('refresh') != payload['refresh']
+    or int(current.get('expires') or 0) != exp
+    or current.get('accountId') != payload.get('accountId')
+    or current.get('email') != payload.get('email')
+    or dst_profiles.get(profile_id) != payload
+)
+print(f"   would patch default: email={payload.get('email')} hours_left={left} refresh={'yes' if payload.get('refresh') else 'no'} change={'yes' if would_change else 'no'}")
+PY
+  else
+    docker cp "$c:$AUTH_PATH" "$backup"
+    chmod 600 "$backup"
+
+    python3 - "$SRC_FILE" "$backup" "$patched" <<'PY'
 import json, os, sys
 src_doc = json.load(open(sys.argv[1]))
 dst_doc = json.load(open(sys.argv[2]))
@@ -355,6 +404,7 @@ usage.setdefault(profile_id, {})['errorCount'] = 0
 
 with open(out_path, 'w') as f:
     json.dump(dst_doc, f, indent=2)
+os.chmod(out_path, 0o600)
 
 print(json.dumps({
     'targetDefaultExpires': payload['expires'],
@@ -364,16 +414,6 @@ print(json.dumps({
 }, separators=(',', ':')))
 PY
 
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    python3 - "$patched" <<'PY'
-import json, sys, time
-p = json.load(open(sys.argv[1])).get('profiles', {}).get('openai-codex:default', {})
-exp = int(p.get('expires') or 0)
-now = int(time.time() * 1000)
-left = int((exp - now) / 3600000) if exp > now else -1
-print(f"   would patch default: email={p.get('email')} hours_left={left} refresh={'yes' if p.get('refresh') else 'no'}")
-PY
-  else
     docker cp "$patched" "$c:$AUTH_PATH"
     docker exec -u root "$c" chown node:node "$AUTH_PATH"
     docker exec -u root "$c" chmod 600 "$AUTH_PATH"
@@ -383,7 +423,7 @@ done
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo
-  echo "Dry run complete. No files written, no containers restarted."
+  echo "Dry run complete. No files were written and no containers were restarted."
   exit 0
 fi
 
@@ -405,6 +445,7 @@ if [[ "$NO_VERIFY" -eq 1 ]]; then
   echo
   echo "Skipping verification (--no-verify)."
   echo "Backups: $WORKDIR/backups"
+  echo "Set KEEP_WORKDIR=1 to preserve temporary files after exit."
   exit 0
 fi
 
@@ -445,3 +486,4 @@ fi
 echo
 echo "Backups: $WORKDIR/backups"
 echo "Patched files: $WORKDIR/patched"
+echo "Set KEEP_WORKDIR=1 to preserve temporary files after exit."
