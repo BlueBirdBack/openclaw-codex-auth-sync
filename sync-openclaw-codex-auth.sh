@@ -330,11 +330,12 @@ for id in "${IDS[@]}"; do
 
   echo "-- oc${id}"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    docker exec "$c" python3 - "$SRC_FILE" "$AUTH_PATH" <<'PY'
-import json, sys, time
+    TARGET_JSON=$(docker exec "$c" python3 -c "import json; print(json.dumps(json.load(open('$AUTH_PATH'))))")
+    export TARGET_JSON
+    python3 - "$SRC_FILE" <<'PY'
+import json, os, sys, time
 src_doc = json.load(open(sys.argv[1]))
-auth_path = sys.argv[2]
-dst_doc = json.load(open(auth_path))
+dst_doc = json.loads(os.environ['TARGET_JSON'])
 selected = json.loads(os.environ['SELECTED_JSON'])
 profile_id = selected['selectedProfileId']
 src_profiles = src_doc.get('profiles', {}) or {}
@@ -353,6 +354,7 @@ if src.get('email'):
     payload['email'] = src.get('email')
 
 current = dst_profiles.get('openai-codex:default', {}) or {}
+current_named = dst_profiles.get(profile_id)
 exp = int(payload.get('expires') or 0)
 now = int(time.time() * 1000)
 left = int((exp - now) / 3600000) if exp > now else -1
@@ -362,10 +364,11 @@ would_change = (
     or int(current.get('expires') or 0) != exp
     or current.get('accountId') != payload.get('accountId')
     or current.get('email') != payload.get('email')
-    or dst_profiles.get(profile_id) != payload
+    or current_named != payload
 )
 print(f"   would patch default: email={payload.get('email')} hours_left={left} refresh={'yes' if payload.get('refresh') else 'no'} change={'yes' if would_change else 'no'}")
 PY
+    unset TARGET_JSON
   else
     docker cp "$c:$AUTH_PATH" "$backup"
     chmod 600 "$backup"
