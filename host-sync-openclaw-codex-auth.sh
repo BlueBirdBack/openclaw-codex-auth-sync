@@ -180,7 +180,7 @@ for cid in ids:
             results.append(row)
             continue
         backup_path.chmod(0o600)
-        patch_code = f'''import base64, json, os\nfrom pathlib import Path\nhost_auth=json.load(open({json.dumps(os.environ['TMP_CODEX_AUTH'])}))\ntokens=host_auth["tokens"]\naccess=tokens["access_token"]\nrefresh=tokens["refresh_token"]\naccount_id=tokens.get("account_id")\npayload_b64=access.split(".")[1]\npayload_b64 += "=" * (-len(payload_b64) % 4)\npayload=json.loads(base64.urlsafe_b64decode(payload_b64.encode()).decode())\nexpires_ms=int(payload["exp"])*1000\nprofile=payload.get("https://api.openai.com/profile") or {{}}\nemail=profile.get("email") or payload.get("email")\npath=Path({json.dumps(auth_path)})\ndata=json.load(path.open())\nprofiles=data.get("profiles", {{}})\nchanged=[]\nfor key, prof in profiles.items():\n    if isinstance(prof, dict) and prof.get("provider") == "openai-codex" and prof.get("type") == "oauth":\n        prof["access"]=access\n        prof["refresh"]=refresh\n        prof["expires"]=expires_ms\n        if account_id:\n            prof["accountId"]=account_id\n        if email and key != "openai-codex:default":\n            prof["email"]=email\n        changed.append(key)\nif "openai-codex:default" not in profiles:\n    profiles["openai-codex:default"]={{"type":"oauth","provider":"openai-codex","access":access,"refresh":refresh,"expires":expires_ms}}\n    if account_id:\n        profiles["openai-codex:default"]["accountId"]=account_id\n    changed.append("openai-codex:default")\nif "lastGood" in data and isinstance(data["lastGood"], dict):\n    if email and f"openai-codex:{{email}}" in profiles:\n        data["lastGood"]["openai-codex"] = f"openai-codex:{{email}}"\n    else:\n        data["lastGood"]["openai-codex"] = "openai-codex:default"\nwith path.open("w") as f:\n    json.dump(data, f, indent=2)\n    f.write("\\n")\nprint(json.dumps({{"changed": changed, "expires": expires_ms, "email": email, "accountId": account_id}}))'''
+        patch_code = f'''import base64, json\nfrom pathlib import Path\nhost_auth=json.loads({json.dumps(json.dumps(host_auth))})\ntokens=host_auth["tokens"]\naccess=tokens["access_token"]\nrefresh=tokens["refresh_token"]\naccount_id=tokens.get("account_id")\npayload_b64=access.split(".")[1]\npayload_b64 += "=" * (-len(payload_b64) % 4)\npayload=json.loads(base64.urlsafe_b64decode(payload_b64.encode()).decode())\nexpires_ms=int(payload["exp"])*1000\nprofile=payload.get("https://api.openai.com/profile") or {{}}\nemail=profile.get("email") or payload.get("email")\npath=Path({json.dumps(auth_path)})\ndata=json.load(path.open())\nprofiles=data.get("profiles", {{}})\nchanged=[]\nfor key, prof in profiles.items():\n    if isinstance(prof, dict) and prof.get("provider") == "openai-codex" and prof.get("type") == "oauth":\n        prof["access"]=access\n        prof["refresh"]=refresh\n        prof["expires"]=expires_ms\n        if account_id:\n            prof["accountId"]=account_id\n        if email and key != "openai-codex:default":\n            prof["email"]=email\n        changed.append(key)\nif "openai-codex:default" not in profiles:\n    profiles["openai-codex:default"]={{"type":"oauth","provider":"openai-codex","access":access,"refresh":refresh,"expires":expires_ms}}\n    if account_id:\n        profiles["openai-codex:default"]["accountId"]=account_id\n    changed.append("openai-codex:default")\nif "lastGood" in data and isinstance(data["lastGood"], dict):\n    if email and f"openai-codex:{{email}}" in profiles:\n        data["lastGood"]["openai-codex"] = f"openai-codex:{{email}}"\n    else:\n        data["lastGood"]["openai-codex"] = "openai-codex:default"\nwith path.open("w") as f:\n    json.dump(data, f, indent=2)\n    f.write("\\n")\nprint(json.dumps({{"changed": changed, "expires": expires_ms, "email": email, "accountId": account_id}}))'''
         write = subprocess.run(['docker', 'exec', container, 'python3', '-c', patch_code], text=True, capture_output=True)
         if write.returncode != 0:
             row['status'] = 'write_failed'
@@ -188,6 +188,8 @@ for cid in ids:
         else:
             row['write_result'] = json.loads(write.stdout)
     results.append(row)
+
+all_ok = all(row.get('status') == 'ok' for row in results)
 
 if json_mode:
     print(json.dumps({'checked_at_ms': now_ms, 'dry_run': dry_run, 'results': results}, indent=2))
@@ -198,11 +200,14 @@ else:
     print(f'targets: {" ".join(ids)}')
     for row in results:
         if row.get('status') != 'ok':
-            print(f"- oc{row['id']}: {row['status']}")
+            detail = f": {row.get('error')}" if row.get('error') else ''
+            print(f"- oc{row['id']}: {row['status']}{detail}")
             continue
         action = 'would update' if dry_run else 'updated'
         changed = ', '.join(row.get('changed_profiles', []))
         print(f"- oc{row['id']}: {action}; hours {row['current_hours_left']} -> {row['host_hours_left']}; refresh_present {row['current_refresh_present']} -> {row['host_refresh_present']}; profiles [{changed}]")
+
+sys.exit(0 if all_ok else 1)
 PY
 
 if [[ "$DRY_RUN" -eq 0 && "$RESTART" -eq 1 ]]; then
